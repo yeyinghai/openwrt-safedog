@@ -1,0 +1,4 @@
+#!/bin/sh
+# 防火墙重载后恢复 sshguard 封禁规则
+[ "$(uci -q get sshguard.main.ban_enabled)" = 1 ] && /usr/bin/sshguard.sh fw
+exit 0

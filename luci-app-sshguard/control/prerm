@@ -1,3 +1,9 @@
 #!/bin/sh
-[ -n "$IPKG_INSTROOT" ] || { /etc/init.d/sshguard stop; /etc/init.d/sshguard disable; /usr/bin/sshguard-luci-hook remove; }
+[ -n "$IPKG_INSTROOT" ] || {
+	/etc/init.d/sshguard stop; /etc/init.d/sshguard disable
+	/usr/bin/sshguard.sh cron off
+	/usr/bin/sshguard-luci-hook remove
+	iptables -t raw -D PREROUTING -m set --match-set sshguard_ban src -j DROP 2>/dev/null
+	ipset -q destroy sshguard_ban
+}
 exit 0
