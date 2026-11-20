@@ -36,7 +36,7 @@ endef
 
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
-[ -n "$$IPKG_INSTROOT" ] || { [ -f /etc/uci-defaults/luci-sshguard ] && ( . /etc/uci-defaults/luci-sshguard ) && rm -f /etc/uci-defaults/luci-sshguard; /usr/bin/sshguard-luci-hook apply; /etc/init.d/sshguard enable; /etc/init.d/sshguard restart; }
+[ -n "$$IPKG_INSTROOT" ] || { [ -f /etc/uci-defaults/luci-sshguard ] && ( . /etc/uci-defaults/luci-sshguard ) && rm -f /etc/uci-defaults/luci-sshguard; /usr/bin/sshguard-luci-hook apply; rm -f /etc/config/sshguard-opkg; /etc/init.d/sshguard enable; /etc/init.d/sshguard restart; }
 exit 0
 endef
 
