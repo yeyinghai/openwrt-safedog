@@ -3,7 +3,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-sshguard
-PKG_VERSION:=1.4.0
+PKG_VERSION:=1.4.1
 PKG_RELEASE:=1
 PKG_MAINTAINER:=yeyinghai
 
@@ -42,18 +42,21 @@ endef
 
 define Package/$(PKG_NAME)/prerm
 #!/bin/sh
-[ -n "$$IPKG_INSTROOT" ] || {
-	/etc/init.d/sshguard stop; /etc/init.d/sshguard disable
-	/usr/bin/sshguard.sh cron off
-	/usr/bin/sshguard-luci-hook remove
-	iptables -t raw -D PREROUTING -m set --match-set sshguard_ban src -j DROP 2>/dev/null
-	ipset -q destroy sshguard_ban
-}
+[ -n "$$IPKG_INSTROOT" ] && exit 0
+/etc/init.d/sshguard stop
+# 升级时只停服务，配置、定时任务、封禁全部保留
+[ "$$1" = upgrade ] && exit 0
+/etc/init.d/sshguard disable
+/usr/bin/sshguard.sh cron off
+/usr/bin/sshguard-luci-hook remove
+iptables -t raw -D PREROUTING -m set --match-set sshguard_ban src -j DROP 2>/dev/null
+ipset -q destroy sshguard_ban
 exit 0
 endef
 
 define Package/$(PKG_NAME)/postrm
 #!/bin/sh
+[ "$$1" = upgrade ] && exit 0
 uci -q delete ucitrack.@sshguard[-1] && uci commit ucitrack
 uci -q delete firewall.sshguard && uci commit firewall
 sed -i "/sshguard.sh report/d; /sshguard-update check/d" /etc/crontabs/root 2>/dev/null

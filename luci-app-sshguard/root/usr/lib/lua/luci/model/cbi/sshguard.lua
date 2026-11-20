@@ -28,7 +28,7 @@ local css = [[
 .sg-t-fail{background:#fdecec;color:#c9302c}.sg-t-ssh{background:#e8f1fd;color:#1d6fd8}
 .sg-t-web{background:#efeafd;color:#6f42c1}.sg-t-test{background:#f1f3f5;color:#6c757d}.sg-t-report{background:#fff4e5;color:#b76e00}.sg-t-update{background:#e6f7f1;color:#11845b}
 .sg-k{font-size:12px;color:#8898aa}.sg-v{font-size:22px;font-weight:600;color:#32325d}.sg-v2{font-size:14px;color:#32325d;margin-top:4px}
-.sg-notes{white-space:pre-wrap;background:#f7f8fb;border:1px solid #e9ecef;border-radius:6px;padding:12px 14px;margin:0;font-size:13px;line-height:1.7;color:#525f7f;max-height:320px;overflow:auto}
+.sg-notes{white-space:pre-wrap;font-family:inherit;background:#f7f8fb;border:1px solid #e9ecef;border-radius:6px;padding:12px 14px;margin:0;font-size:13px;line-height:1.7;color:#525f7f;max-height:320px;overflow:auto}
 #cbi-sshguard-main-_upd .cbi-value-title{display:none}
 #cbi-sshguard-main-_upd .cbi-value-field{width:100%!important;margin-left:0!important;padding-left:0!important}
 .sg-sub{font-weight:600;color:#32325d;margin:6px 0 10px}
@@ -251,7 +251,7 @@ o.rawhtml = true
 function o.cfgvalue()
 	local function rd(f) return (fs.readfile(f) or ""):gsub("%s+$", "") end
 	local info = {}
-	for k, v in rd("/tmp/sshguard/update.info"):gmatch("(%w+)=([^\n]*)") do info[k] = v end
+	for k, v in rd("/tmp/sshguard-update/update.info"):gmatch("(%w+)=([^\n]*)") do info[k] = v end
 	local cur = sys.exec("/usr/bin/sshguard-update current"):gsub("%s+$", "")
 	local function newer(a, b)
 		local x, y = {}, {}
@@ -263,7 +263,7 @@ function o.cfgvalue()
 		end
 		return false
 	end
-	local state = rd("/tmp/sshguard/update.state")
+	local state = rd("/tmp/sshguard-update/update.state")
 	local running = state:match("^running") ~= nil
 	local h = { '<div class="sg-wrap" style="padding:18px 20px">' }
 	h[#h + 1] = '<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
@@ -282,7 +282,7 @@ function o.cfgvalue()
 	end
 	h[#h + 1] = '</div>'
 	if info.latest then
-		h[#h + 1] = '<div class="sg-k" style="margin-bottom:6px">v' .. esc(info.latest) .. ' 更新内容</div><pre class="sg-notes">' .. esc(rd("/tmp/sshguard/update.notes")) .. '</pre>'
+		h[#h + 1] = '<div class="sg-k" style="margin-bottom:6px">v' .. esc(info.latest) .. ' 更新内容</div><pre class="sg-notes">' .. esc(rd("/tmp/sshguard-update/update.notes")) .. '</pre>'
 	end
 	h[#h + 1] = '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
 	h[#h + 1] = '<input type="submit" class="cbi-button cbi-button-reload" name="sg_chk" value="检查更新">'
@@ -290,7 +290,7 @@ function o.cfgvalue()
 		h[#h + 1] = '<input type="submit" class="cbi-button cbi-button-apply" name="sg_upd" value="更新到 v' .. esc(info.latest) .. '" onclick="return confirm(\'确定更新到 v' .. esc(info.latest) .. '？设置和封禁列表会保留\')">'
 	end
 	h[#h + 1] = '</div>'
-	local log = rd("/tmp/sshguard/update.log")
+	local log = rd("/tmp/sshguard-update/update.log")
 	if log ~= "" then
 		h[#h + 1] = '<div class="sg-k" style="margin:14px 0 6px">更新日志' .. (running and '（进行中，页面会自动刷新）' or '') .. '</div><pre class="sg-notes">' .. esc(log) .. '</pre>'
 	end

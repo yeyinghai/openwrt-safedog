@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "date": "2026-11-21",
-  "ipk": "luci-app-sshguard_1.4.0-1_all.ipk",
+  "ipk": "luci-app-sshguard_1.4.1-1_all.ipk",
   "notes": "- 新增「在线更新」：界面显示当前 / 最新版本和更新内容，看完再自己决定是否更新\n- 新版本推送提醒：每天检查一次，每个版本只提醒一次\n- GitHub 连不上时自动换用 jsDelivr、ghfast.top、gh-proxy.com 检查和下载\n- 更新后保留全部设置、封禁列表和统计数据"
 }

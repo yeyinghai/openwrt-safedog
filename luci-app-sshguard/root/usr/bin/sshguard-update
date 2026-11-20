@@ -2,7 +2,8 @@
 # luci-app-sshguard 在线更新：GitHub 连不上时自动走 jsDelivr / ghfast / gh-proxy 镜像
 REPO=yeyinghai/openwrt-safedog
 PKG=luci-app-sshguard
-D=/tmp/sshguard; P=/etc/sshguard; mkdir -p "$D" "$P"
+# 单独目录：旧版本卸载脚本会清理 /tmp/sshguard，更新过程不能放在那里
+D=/tmp/sshguard-update; P=/etc/sshguard; mkdir -p "$D" "$P"
 INFO=$D/update.info; NOTES=$D/update.notes; LOG=$D/update.log; STATE=$D/update.state
 
 cur() { opkg status $PKG 2>/dev/null | sed -n 's/^Version: \(.*\)-[0-9]*$/\1/p'; }
@@ -28,7 +29,9 @@ check() {
   v=$(echo "$j" | jsonfilter -e '@.tag_name' 2>/dev/null)
   if [ -n "$v" ]; then
     ver=${v#v}; src="GitHub"
-    date=$(echo "$j" | jsonfilter -e '@.published_at' | cut -c1-10)
+    pa=$(echo "$j" | jsonfilter -e '@.published_at')
+    date=$(date -d @"$(date -u -D '%Y-%m-%dT%H:%M:%SZ' -d "$pa" +%s 2>/dev/null)" +%F 2>/dev/null) || date=$(echo "$pa" | cut -c1-10)
+    [ -n "$date" ] || date=$(echo "$pa" | cut -c1-10)
     ipk=$(echo "$j" | jsonfilter -e '@.assets[0].name')
     echo "$j" | jsonfilter -e '@.body' | tr -d '\r' > "$NOTES.t"
   else
@@ -67,6 +70,7 @@ $(head -c 600 "$NOTES")
 }
 
 run() {
+  exec >>"$LOG" 2>&1
   echo "running" > "$STATE"
   echo "[$(date '+%T')] 检查最新版本…"
   check; r=$?
@@ -97,7 +101,9 @@ case "$1" in
   start)  # 复制到 /tmp 执行，避免升级时覆盖正在运行的脚本
           [ "$(cut -d' ' -f1 "$STATE" 2>/dev/null)" = running ] && [ -n "$(pgrep -f "$D/upd.sh run")" ] && { echo "更新正在进行"; exit 0; }
           cp "$0" "$D/upd.sh"; : > "$LOG"; echo running > "$STATE"
-          ( sh "$D/upd.sh" run </dev/null >>"$LOG" 2>&1 & ) ; echo "已开始更新" ;;
+          # 脱离网页请求的进程组独立运行，网页请求结束也不会被中断
+          start-stop-daemon -S -b -x /bin/sh -- "$D/upd.sh" run
+          echo "已开始更新，稍等十几秒" ;;
   run)    run ;;
   current) cur ;;
   *) echo "用法: $0 check [notify] | start | current" ;;

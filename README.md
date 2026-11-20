@@ -122,7 +122,7 @@ cd openwrt-safedog
 
 **方式二：GitHub Actions**
 
-先改 `Makefile` 版本号、在 `CHANGELOG.md` 写更新内容并运行 `./release.sh` 生成 `version.json`，提交后推送 `v*` 标签（如 `git tag v1.4.0 && git push origin v1.4.0`）会自动构建并发布到 Releases；也可在 Actions 页面手动运行，从 Artifacts 下载。
+先改 `Makefile` 版本号、在 `CHANGELOG.md` 写更新内容并运行 `./release.sh` 生成 `version.json`，提交后推送 `v*` 标签（如 `git tag v1.4.1 && git push origin v1.4.1`）会自动构建并发布到 Releases；也可在 Actions 页面手动运行，从 Artifacts 下载。
 
 **方式三：OpenWrt SDK / 源码树**
 
