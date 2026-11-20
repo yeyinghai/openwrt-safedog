@@ -102,7 +102,8 @@ case "$1" in
           [ "$(cut -d' ' -f1 "$STATE" 2>/dev/null)" = running ] && [ -n "$(pgrep -f "$D/upd.sh run")" ] && { echo "更新正在进行"; exit 0; }
           cp "$0" "$D/upd.sh"; : > "$LOG"; echo running > "$STATE"
           # 脱离网页请求的进程组独立运行，网页请求结束也不会被中断
-          start-stop-daemon -S -b -x /bin/sh -- "$D/upd.sh" run
+          chmod +x "$D/upd.sh"
+          start-stop-daemon -S -b -x "$D/upd.sh" -- run || ( setsid sh "$D/upd.sh" run </dev/null >/dev/null 2>&1 & )
           echo "已开始更新，稍等十几秒" ;;
   run)    run ;;
   current) cur ;;
