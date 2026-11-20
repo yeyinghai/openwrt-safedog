@@ -1,0 +1,3 @@
+#!/bin/sh
+[ -n "$IPKG_INSTROOT" ] || { /etc/init.d/sshguard stop; /etc/init.d/sshguard disable; /usr/bin/sshguard-luci-hook remove; }
+exit 0

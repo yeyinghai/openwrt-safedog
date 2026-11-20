@@ -1,0 +1,9 @@
+#!/bin/sh
+uci -q batch <<-EOT >/dev/null
+	delete ucitrack.@sshguard[-1]
+	add ucitrack sshguard
+	set ucitrack.@sshguard[-1].init=sshguard
+	commit ucitrack
+EOT
+rm -rf /tmp/luci-*
+exit 0

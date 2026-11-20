@@ -1,0 +1,19 @@
+#!/bin/sh
+# 在 LuCI 登录流程中写 syslog：luci: accepted/failed login for USER from IP
+F=/usr/lib/lua/luci/dispatcher.lua
+M='-- sshguard-hook'
+case "$1" in
+apply)
+  grep -q -- "$M" "$F" && exit 0
+  grep -q 'sid, sdat = session_setup(user, pass, allowed_users)' "$F" || { echo "dispatcher 格式不匹配，跳过"; exit 1; }
+  cp "$F" /tmp/dispatcher.lua.bak
+  cat > /tmp/sshguard-hook.lua <<'L'
+			if user then local _u = tostring(user):gsub("[^%w%._@%-]", "_"):sub(1, 32) local _i = (http.getenv("REMOTE_ADDR") or "unknown"):gsub("[^%x%.:]", "") os.execute("logger -p authpriv.notice -t luci '" .. (sid and "accepted" or "failed") .. " login for " .. _u .. " from " .. _i .. "'") end -- sshguard-hook
+L
+  sed -i '/sid, sdat = session_setup(user, pass, allowed_users)/r /tmp/sshguard-hook.lua' "$F"
+  rm -f /tmp/sshguard-hook.lua /tmp/luci-indexcache* ; rm -rf /tmp/luci-modulecache
+  lua -e "assert(loadfile('$F'))" 2>/dev/null || { cp /tmp/dispatcher.lua.bak "$F"; echo "语法检查失败，已还原"; exit 1; }
+  echo applied ;;
+remove)
+  sed -i "/$M/d" "$F"; rm -f /tmp/luci-indexcache*; rm -rf /tmp/luci-modulecache; echo removed ;;
+esac

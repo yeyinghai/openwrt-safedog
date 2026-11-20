@@ -1,0 +1,4 @@
+#!/bin/sh
+uci -q delete ucitrack.@sshguard[-1] && uci commit ucitrack
+rm -rf /tmp/luci-* /tmp/sshguard
+exit 0
