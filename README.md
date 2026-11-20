@@ -14,6 +14,7 @@ OpenWrt 路由器登录看门狗：实时监控 **SSH（dropbear）** 和 **LuCI
 - **自动封禁**：达到失败阈值的 IP 直接在防火墙（raw 表 + ipset）丢弃全部连接；封禁时长 1 小时～永久可选，支持白名单、手动封禁 / 解封；封禁列表重启路由器、重载防火墙后自动恢复
 - **IP 归属地**：推送和封禁列表显示国家 / 省市 / 运营商（ip-api.com，缓存 7 天）
 - **每日安全简报**：每天定时推送过去 24 小时的 SSH / 网页失败次数、攻击最多的前 3 个 IP 及归属地、登录成功记录、新增与当前封禁数、运行时间 / 内存 / 负载 / 公网 IP；每项可开关，可一键立即发送；统计数据存于 `/etc/sshguard`，重启不丢
+- **在线更新**：界面显示当前 / 最新版本和更新内容，自己决定是否点更新；每天检查一次，有新版本推送提醒；GitHub 连不上时自动换用 jsDelivr、ghfast.top、gh-proxy.com
 - **内网过滤**：可设置内网网段，内网输错密码不算暴力破解；可选择内网登录是否提醒
 - **自定义推送内容**：标题、内容均可用变量自由组合
 - **Bark 设置**：官方 / 自建服务器、分组、通知级别（时效性、静音也响等）、提示音、一键测试
@@ -102,6 +103,8 @@ opkg install /tmp/luci-app-sshguard_*_all.ipk
 /usr/bin/sshguard.sh ban 1.2.3.4   # 手动封禁
 /usr/bin/sshguard.sh unban 1.2.3.4 # 解封（unban all 全部解封）
 /usr/bin/sshguard.sh geo 1.2.3.4   # 查询归属地
+/usr/bin/sshguard-update check     # 检查新版本
+/usr/bin/sshguard-update start     # 后台下载并安装新版本（日志 /tmp/sshguard/update.log）
 /etc/init.d/sshguard restart       # 重启服务
 logread | grep -E "dropbear|luci:" # 查看登录日志
 ```
@@ -119,7 +122,7 @@ cd openwrt-safedog
 
 **方式二：GitHub Actions**
 
-推送 `v*` 标签（如 `git tag v1.3.0 && git push origin v1.3.0`）会自动构建并发布到 Releases；也可在 Actions 页面手动运行，从 Artifacts 下载。
+先改 `Makefile` 版本号、在 `CHANGELOG.md` 写更新内容并运行 `./release.sh` 生成 `version.json`，提交后推送 `v*` 标签（如 `git tag v1.4.0 && git push origin v1.4.0`）会自动构建并发布到 Releases；也可在 Actions 页面手动运行，从 Artifacts 下载。
 
 **方式三：OpenWrt SDK / 源码树**
 
@@ -154,7 +157,4 @@ build.sh                             # 一键打包 ipk
 
 ## 更新记录
 
-- **1.3.0**：暴力破解 IP 自动封禁（白名单、手动封禁/解封、重启恢复）；推送显示 IP 归属地；每日安全简报
-- **1.2.0**：界面美化；自建 Bark 内网直连；修复重复进程导致的重复推送
-- **1.1.0**：LuCI 网页后台登录提醒，网页失败计入暴力破解
-- **1.0.0**：SSH 暴力破解与登录成功 Bark 推送，LuCI 设置界面
+见 [CHANGELOG.md](CHANGELOG.md)。

@@ -1,0 +1,104 @@
+#!/bin/sh
+# luci-app-sshguard 在线更新：GitHub 连不上时自动走 jsDelivr / ghfast / gh-proxy 镜像
+REPO=yeyinghai/openwrt-safedog
+PKG=luci-app-sshguard
+D=/tmp/sshguard; P=/etc/sshguard; mkdir -p "$D" "$P"
+INFO=$D/update.info; NOTES=$D/update.notes; LOG=$D/update.log; STATE=$D/update.state
+
+cur() { opkg status $PKG 2>/dev/null | sed -n 's/^Version: \(.*\)-[0-9]*$/\1/p'; }
+newer() { awk -v a="$1" -v b="$2" 'BEGIN{n=split(a,x,".");m=split(b,y,".");k=n>m?n:m;for(i=1;i<=k;i++){if(x[i]+0>y[i]+0)exit 0;if(x[i]+0<y[i]+0)exit 1}exit 1}'; }
+get() { sed -n "s/^$1=//p" "$INFO" 2>/dev/null; }
+
+# 下载线路：首选在界面里选的，其余作为备用；"-" 表示直连 GitHub
+mirrors() {
+  all="- https://ghfast.top/ https://gh-proxy.com/"
+  case "$(uci -q get sshguard.main.update_mirror)" in
+    ghfast)  first=https://ghfast.top/ ;;
+    ghproxy) first=https://gh-proxy.com/ ;;
+    direct)  first=- ;;
+    *)       echo "$all"; return ;;
+  esac
+  echo "$first"; for m in $all; do [ "$m" = "$first" ] || echo "$m"; done
+}
+pre() { [ "$1" = - ] || printf '%s' "$1"; }
+
+check() {
+  ver=""; src=""
+  j=$(curl -s -m 10 -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/latest")
+  v=$(echo "$j" | jsonfilter -e '@.tag_name' 2>/dev/null)
+  if [ -n "$v" ]; then
+    ver=${v#v}; src="GitHub"
+    date=$(echo "$j" | jsonfilter -e '@.published_at' | cut -c1-10)
+    ipk=$(echo "$j" | jsonfilter -e '@.assets[0].name')
+    echo "$j" | jsonfilter -e '@.body' | tr -d '\r' > "$NOTES.t"
+  else
+    for u in "https://cdn.jsdelivr.net/gh/$REPO@main/version.json" "https://fastly.jsdelivr.net/gh/$REPO@main/version.json" \
+             $(for m in $(mirrors); do echo "$(pre $m)https://raw.githubusercontent.com/$REPO/main/version.json"; done); do
+      j=$(curl -sL -m 10 "$u"); v=$(echo "$j" | jsonfilter -e '@.version' 2>/dev/null)
+      [ -n "$v" ] || continue
+      ver=$v; src=$(echo "$u" | sed 's#^https://\([^/]*\)/.*#\1#')
+      date=$(echo "$j" | jsonfilter -e '@.date'); ipk=$(echo "$j" | jsonfilter -e '@.ipk')
+      echo "$j" | jsonfilter -e '@.notes' | tr -d '\r' > "$NOTES.t"
+      break
+    done
+  fi
+  if [ -z "$ver" ]; then
+    echo "fail $(date '+%F %T')" > "$STATE.check"
+    echo "❌ 检查失败：GitHub 和所有镜像都连不上"; return 1
+  fi
+  [ -n "$ipk" ] || ipk="${PKG}_${ver}-1_all.ipk"
+  mv "$NOTES.t" "$NOTES"
+  printf 'latest=%s\ndate=%s\nipk=%s\nsrc=%s\nchecked=%s\n' "$ver" "$date" "$ipk" "$src" "$(date '+%F %T')" > "$INFO"
+  echo "ok $(date '+%F %T')" > "$STATE.check"
+  c=$(cur)
+  if newer "$ver" "$c"; then echo "🆕 发现新版本 v$ver（当前 v$c，来源 $src）"; return 0; fi
+  echo "✅ 已是最新版本 v$c（来源 $src）"; return 2
+}
+
+notify() {
+  check >/dev/null; [ $? = 0 ] || return
+  ver=$(get latest)
+  [ "$(cat "$P/notified" 2>/dev/null)" = "$ver" ] && return
+  body="当前 v$(cur)，最新 v$ver（$(get date)）
+$(head -c 600 "$NOTES")
+
+到「服务 → SSH 登录预警 → 在线更新」查看并更新"
+  /usr/bin/sshguard.sh push update "🆕 SSH 登录预警 v$ver 可更新" "$body" >/dev/null && echo "$ver" > "$P/notified"
+}
+
+run() {
+  echo "running" > "$STATE"
+  echo "[$(date '+%T')] 检查最新版本…"
+  check; r=$?
+  [ $r = 0 ] || { [ $r = 2 ] && echo "done 已是最新" > "$STATE" || echo "fail 检查失败" > "$STATE"; return; }
+  ver=$(get latest); ipk=$(get ipk); f=$D/new.ipk; ok=""
+  for m in $(mirrors); do
+    url="$(pre $m)https://github.com/$REPO/releases/download/v$ver/$ipk"
+    [ "$m" = - ] && how="直连 GitHub" || how="经 $m"
+    echo "[$(date '+%T')] 下载 v$ver（$how）"
+    rm -f "$f"
+    if curl -sL -m 120 -o "$f" "$url" && tar -tzf "$f" 2>/dev/null | grep -q control.tar.gz; then ok=1; break; fi
+    echo "  失败，换下一条线路"
+  done
+  [ -n "$ok" ] || { echo "❌ 所有线路下载失败，可到 GitHub Release 手动下载 ipk 上传安装"; echo "fail 下载失败" > "$STATE"; return; }
+  echo "[$(date '+%T')] 下载完成 $(wc -c < "$f") 字节，开始安装…"
+  opkg install "$f" 2>&1
+  rm -f "$f"; rm -rf /tmp/luci-*
+  if [ "$(cur)" = "$ver" ]; then
+    echo "[$(date '+%T')] ✅ 已更新到 v$ver"; echo "done 已更新到 v$ver" > "$STATE"; echo "$ver" > "$P/notified"
+    /usr/bin/sshguard.sh push update "✅ SSH 登录预警已更新到 v$ver" "$(head -c 600 "$NOTES")" >/dev/null
+  else
+    echo "❌ 安装失败，当前仍为 v$(cur)"; echo "fail 安装失败" > "$STATE"
+  fi
+}
+
+case "$1" in
+  check)  if [ "$2" = notify ]; then notify; else check; fi ;;
+  start)  # 复制到 /tmp 执行，避免升级时覆盖正在运行的脚本
+          [ "$(cut -d' ' -f1 "$STATE" 2>/dev/null)" = running ] && [ -n "$(pgrep -f "$D/upd.sh run")" ] && { echo "更新正在进行"; exit 0; }
+          cp "$0" "$D/upd.sh"; : > "$LOG"; echo running > "$STATE"
+          ( sh "$D/upd.sh" run </dev/null >>"$LOG" 2>&1 & ) ; echo "已开始更新" ;;
+  run)    run ;;
+  current) cur ;;
+  *) echo "用法: $0 check [notify] | start | current" ;;
+esac

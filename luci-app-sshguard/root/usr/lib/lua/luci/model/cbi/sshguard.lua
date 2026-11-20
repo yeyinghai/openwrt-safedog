@@ -26,7 +26,11 @@ local css = [[
 .sg-table tr:hover td{background:#fafbff}
 .sg-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;white-space:nowrap}
 .sg-t-fail{background:#fdecec;color:#c9302c}.sg-t-ssh{background:#e8f1fd;color:#1d6fd8}
-.sg-t-web{background:#efeafd;color:#6f42c1}.sg-t-test{background:#f1f3f5;color:#6c757d}.sg-t-report{background:#fff4e5;color:#b76e00}
+.sg-t-web{background:#efeafd;color:#6f42c1}.sg-t-test{background:#f1f3f5;color:#6c757d}.sg-t-report{background:#fff4e5;color:#b76e00}.sg-t-update{background:#e6f7f1;color:#11845b}
+.sg-k{font-size:12px;color:#8898aa}.sg-v{font-size:22px;font-weight:600;color:#32325d}.sg-v2{font-size:14px;color:#32325d;margin-top:4px}
+.sg-notes{white-space:pre-wrap;background:#f7f8fb;border:1px solid #e9ecef;border-radius:6px;padding:12px 14px;margin:0;font-size:13px;line-height:1.7;color:#525f7f;max-height:320px;overflow:auto}
+#cbi-sshguard-main-_upd .cbi-value-title{display:none}
+#cbi-sshguard-main-_upd .cbi-value-field{width:100%!important;margin-left:0!important;padding-left:0!important}
 .sg-sub{font-weight:600;color:#32325d;margin:6px 0 10px}
 #cbi-sshguard-main-_bans .cbi-value-title{display:none}
 #cbi-sshguard-main-_bans .cbi-value-field{width:100%!important;margin-left:0!important;padding-left:0!important}
@@ -54,6 +58,10 @@ do
 		m.message = ip and sys.exec("/usr/bin/sshguard.sh unban " .. ip .. " 2>&1") or "请输入正确的 IP"
 	elseif http.formvalue("sg_unban_all") then
 		m.message = sys.exec("/usr/bin/sshguard.sh unban all 2>&1")
+	elseif http.formvalue("sg_chk") then
+		m.message = sys.exec("/usr/bin/sshguard-update check 2>&1")
+	elseif http.formvalue("sg_upd") then
+		m.message = sys.exec("/usr/bin/sshguard-update start 2>&1")
 	end
 end
 
@@ -63,6 +71,7 @@ s:tab("basic", translate("基本设置"))
 s:tab("rule",  translate("预警规则"))
 s:tab("ban",   translate("自动封禁"))
 s:tab("report", translate("每日简报"))
+s:tab("update", translate("在线更新"))
 s:tab("msg",   translate("推送内容"))
 s:tab("log",   translate("推送记录"))
 
@@ -236,6 +245,75 @@ function o.write()
 	m.message = sys.exec("/usr/bin/sshguard.sh report 2>&1")
 end
 
+-- 在线更新
+o = s:taboption("update", DummyValue, "_upd")
+o.rawhtml = true
+function o.cfgvalue()
+	local function rd(f) return (fs.readfile(f) or ""):gsub("%s+$", "") end
+	local info = {}
+	for k, v in rd("/tmp/sshguard/update.info"):gmatch("(%w+)=([^\n]*)") do info[k] = v end
+	local cur = sys.exec("/usr/bin/sshguard-update current"):gsub("%s+$", "")
+	local function newer(a, b)
+		local x, y = {}, {}
+		for n in (a or ""):gmatch("%d+") do x[#x + 1] = tonumber(n) end
+		for n in (b or ""):gmatch("%d+") do y[#y + 1] = tonumber(n) end
+		for i = 1, math.max(#x, #y) do
+			local p, q = x[i] or 0, y[i] or 0
+			if p ~= q then return p > q end
+		end
+		return false
+	end
+	local state = rd("/tmp/sshguard/update.state")
+	local running = state:match("^running") ~= nil
+	local h = { '<div class="sg-wrap" style="padding:18px 20px">' }
+	h[#h + 1] = '<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
+	h[#h + 1] = '<div><div class="sg-k">当前版本</div><div class="sg-v">v' .. esc(cur) .. '</div></div>'
+	if info.latest then
+		h[#h + 1] = '<div><div class="sg-k">最新版本</div><div class="sg-v">v' .. esc(info.latest) .. '</div></div>'
+		h[#h + 1] = '<div><div class="sg-k">发布日期</div><div class="sg-v2">' .. esc(info.date or "-") .. '</div></div>'
+		h[#h + 1] = '<div><div class="sg-k">检查时间 / 来源</div><div class="sg-v2">' .. esc(info.checked or "-") .. ' · ' .. esc(info.src or "-") .. '</div></div>'
+		if newer(info.latest, cur) then
+			h[#h + 1] = '<span class="sg-tag sg-t-report">有新版本</span>'
+		else
+			h[#h + 1] = '<span class="sg-tag sg-t-ssh">已是最新</span>'
+		end
+	else
+		h[#h + 1] = '<div class="sg-k">还没有检查过，点「检查更新」</div>'
+	end
+	h[#h + 1] = '</div>'
+	if info.latest then
+		h[#h + 1] = '<div class="sg-k" style="margin-bottom:6px">v' .. esc(info.latest) .. ' 更新内容</div><pre class="sg-notes">' .. esc(rd("/tmp/sshguard/update.notes")) .. '</pre>'
+	end
+	h[#h + 1] = '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
+	h[#h + 1] = '<input type="submit" class="cbi-button cbi-button-reload" name="sg_chk" value="检查更新">'
+	if info.latest and newer(info.latest, cur) and not running then
+		h[#h + 1] = '<input type="submit" class="cbi-button cbi-button-apply" name="sg_upd" value="更新到 v' .. esc(info.latest) .. '" onclick="return confirm(\'确定更新到 v' .. esc(info.latest) .. '？设置和封禁列表会保留\')">'
+	end
+	h[#h + 1] = '</div>'
+	local log = rd("/tmp/sshguard/update.log")
+	if log ~= "" then
+		h[#h + 1] = '<div class="sg-k" style="margin:14px 0 6px">更新日志' .. (running and '（进行中，页面会自动刷新）' or '') .. '</div><pre class="sg-notes">' .. esc(log) .. '</pre>'
+	end
+	if running then
+		h[#h + 1] = '<script>setTimeout(function(){location.reload()},4000)</script>'
+	end
+	h[#h + 1] = '</div>'
+	return table.concat(h)
+end
+
+o = s:taboption("update", ListValue, "update_mirror", translate("下载线路"),
+	translate("GitHub 连不上时自动换用其他线路；检查版本还会尝试 jsDelivr"))
+o:value("auto", translate("自动（直连 → ghfast → gh-proxy）"))
+o:value("ghfast", translate("优先 ghfast.top"))
+o:value("ghproxy", translate("优先 gh-proxy.com"))
+o:value("direct", translate("优先直连 GitHub"))
+o.default = "auto"
+
+o = s:taboption("update", Flag, "update_notify", translate("新版本推送提醒"),
+	translate("每天在简报发送时间后 5 分钟检查一次，有新版本推送到 Bark（每个版本只提醒一次）"))
+o.rmempty = false
+o.default = "1"
+
 -- 推送内容
 o = s:taboption("msg", DummyValue, "_vars", translate("可用变量"))
 o.rawhtml = true
@@ -265,7 +343,7 @@ msg("web_body",   "网页登录 · 内容", "用户 {user} 从 {ip}（{loc}）�
 o = s:taboption("log", DummyValue, "_log")
 o.rawhtml = true
 function o.cfgvalue()
-	local names = { fail = "暴力破解", ssh = "SSH 登录", web = "网页登录", test = "测试", report = "每日简报" }
+	local names = { fail = "暴力破解", ssh = "SSH 登录", web = "网页登录", test = "测试", report = "每日简报", update = "更新" }
 	local rows = {}
 	for line in (fs.readfile("/tmp/sshguard/history.log") or ""):gmatch("[^\n]+") do
 		local t, k, st, ti, bo = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t(.*)$")

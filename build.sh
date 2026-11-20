@@ -10,7 +10,7 @@ mkdir -p "$W/ctl" dist
 cp $PKG/control/* "$W/ctl/"
 chmod 755 "$W/ctl/postinst" "$W/ctl/prerm" "$W/ctl/postrm"
 cp -r $PKG/root "$W/data"
-chmod 755 "$W/data/usr/bin/sshguard.sh" "$W/data/usr/bin/sshguard-luci-hook" "$W/data/etc/init.d/sshguard" "$W/data/etc/uci-defaults/luci-sshguard" "$W/data/usr/share/sshguard/firewall.include"
+chmod 755 "$W/data/usr/bin/sshguard.sh" "$W/data/usr/bin/sshguard-luci-hook" "$W/data/usr/bin/sshguard-update" "$W/data/etc/init.d/sshguard" "$W/data/etc/uci-defaults/luci-sshguard" "$W/data/usr/share/sshguard/firewall.include"
 SIZE=$(du -sk "$W/data" | cut -f1)
 cat > "$W/ctl/control" <<C
 Package: $PKG

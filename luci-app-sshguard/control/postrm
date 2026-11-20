@@ -1,6 +1,6 @@
 #!/bin/sh
 uci -q delete ucitrack.@sshguard[-1] && uci commit ucitrack
 uci -q delete firewall.sshguard && uci commit firewall
-sed -i "/sshguard.sh report/d" /etc/crontabs/root 2>/dev/null
+sed -i "/sshguard.sh report/d; /sshguard-update check/d" /etc/crontabs/root 2>/dev/null
 rm -rf /tmp/luci-* /tmp/sshguard
 exit 0

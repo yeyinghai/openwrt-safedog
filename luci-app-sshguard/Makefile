@@ -3,7 +3,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-sshguard
-PKG_VERSION:=1.3.0
+PKG_VERSION:=1.4.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=yeyinghai
 
@@ -31,7 +31,7 @@ endef
 
 define Package/$(PKG_NAME)/install
 	$(CP) ./root/* $(1)/
-	chmod 0755 $(1)/usr/bin/sshguard.sh $(1)/usr/bin/sshguard-luci-hook $(1)/etc/init.d/sshguard $(1)/usr/share/sshguard/firewall.include
+	chmod 0755 $(1)/usr/bin/sshguard.sh $(1)/usr/bin/sshguard-luci-hook $(1)/usr/bin/sshguard-update $(1)/etc/init.d/sshguard $(1)/usr/share/sshguard/firewall.include
 endef
 
 define Package/$(PKG_NAME)/postinst
@@ -56,7 +56,7 @@ define Package/$(PKG_NAME)/postrm
 #!/bin/sh
 uci -q delete ucitrack.@sshguard[-1] && uci commit ucitrack
 uci -q delete firewall.sshguard && uci commit firewall
-sed -i "/sshguard.sh report/d" /etc/crontabs/root 2>/dev/null
+sed -i "/sshguard.sh report/d; /sshguard-update check/d" /etc/crontabs/root 2>/dev/null
 rm -rf /tmp/luci-* /tmp/sshguard
 exit 0
 endef

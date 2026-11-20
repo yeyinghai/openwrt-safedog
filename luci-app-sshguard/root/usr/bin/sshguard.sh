@@ -186,6 +186,10 @@ cron_set() {
   if [ "$1" = on ] && [ "$(cfg report_enabled 1)" = 1 ]; then
     echo "$(cfg report_minute 0) $(cfg report_hour 9) * * * /usr/bin/sshguard.sh report >/dev/null 2>&1" >> /etc/crontabs/root
   fi
+  sed -i '/sshguard-update check/d' /etc/crontabs/root 2>/dev/null
+  if [ "$1" = on ] && [ "$(cfg update_notify 1)" = 1 ]; then
+    echo "5 $(cfg report_hour 9) * * * /usr/bin/sshguard-update check notify >/dev/null 2>&1" >> /etc/crontabs/root
+  fi
   /etc/init.d/cron restart >/dev/null 2>&1
 }
 
@@ -203,6 +207,7 @@ cleanup() {
 case "$1" in
   test)    send test "🔔 $HOST 推送测试" "SSH 登录预警配置正常，时间 $(date '+%F %T')"; exit 0 ;;
   report)  report; exit 0 ;;
+  push)    send "$2" "$3" "$4"; exit 0 ;;
   cleanup) cleanup; exit 0 ;;
   cron)    cron_set "$2"; exit 0 ;;
   geo)     geo "$2"; exit 0 ;;
