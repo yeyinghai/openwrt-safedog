@@ -6,6 +6,5 @@
 /etc/init.d/sshguard disable
 /usr/bin/sshguard.sh cron off
 /usr/bin/sshguard-luci-hook remove
-iptables -t raw -D PREROUTING -m set --match-set sshguard_ban src -j DROP 2>/dev/null
-ipset -q destroy sshguard_ban
+/usr/bin/sshguard.sh fwoff
 exit 0

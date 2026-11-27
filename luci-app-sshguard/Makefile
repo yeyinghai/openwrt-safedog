@@ -3,7 +3,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-sshguard
-PKG_VERSION:=1.4.1
+PKG_VERSION:=1.5.0
 PKG_RELEASE:=1
 PKG_MAINTAINER:=yeyinghai
 
@@ -14,7 +14,7 @@ define Package/$(PKG_NAME)
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=LuCI support for SSH / LuCI login alert (Bark)
-  DEPENDS:=+curl +luci-compat +ipset +iptables
+  DEPENDS:=+curl +luci-compat +luci-lib-nixio
   PKGARCH:=all
 endef
 

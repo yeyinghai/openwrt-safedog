@@ -1,15 +1,24 @@
 #!/bin/sh
-uci -q batch <<-EOT >/dev/null
-	delete ucitrack.@sshguard[-1]
-	add ucitrack sshguard
-	set ucitrack.@sshguard[-1].init=sshguard
-	commit ucitrack
-	set firewall.sshguard=include
-	set firewall.sshguard.type=script
-	set firewall.sshguard.path=/usr/share/sshguard/firewall.include
-	set firewall.sshguard.reload=1
-	commit firewall
-EOT
+# 老固件（LuCI Lua + fw3）：ucitrack 联动、防火墙重载后恢复封禁规则
+if [ -f /etc/config/ucitrack ]; then
+	uci -q batch <<-EOT >/dev/null
+		delete ucitrack.@sshguard[-1]
+		add ucitrack sshguard
+		set ucitrack.@sshguard[-1].init=sshguard
+		commit ucitrack
+	EOT
+fi
+if [ ! -x /sbin/fw4 ]; then
+	uci -q batch <<-EOT >/dev/null
+		set firewall.sshguard=include
+		set firewall.sshguard.type=script
+		set firewall.sshguard.path=/usr/share/sshguard/firewall.include
+		set firewall.sshguard.reload=1
+		commit firewall
+	EOT
+fi
+# 新固件（fw4/nftables）的封禁表独立于 fw4，防火墙重载不受影响，开机由服务恢复
+/etc/init.d/sshguard enable 2>/dev/null
 # 旧版默认文案升级为带归属地的新文案（用户改过的不动）
 o() { [ "$(uci -q get sshguard.main.$1)" = "$2" ] && uci set sshguard.main.$1="$3"; }
 o fail_body '{ip} 在 {minutes} 分钟内失败 {count} 次，最近尝试用户：{user}' '{ip}（{loc}）在 {minutes} 分钟内失败 {count} 次，最近尝试用户：{user}。{ban}'

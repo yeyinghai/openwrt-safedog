@@ -53,7 +53,7 @@ OpenWrt 路由器登录看门狗：实时监控 **SSH（dropbear）** 和 **LuCI
 
 适用于使用 Lua LuCI（含 `luci-compat`）的 OpenWrt，例如 Lean / LEDE 源码编译的 R20.x、R21.x，OpenWrt 19.07、21.02。架构无关（`all`），任何 CPU 都能装。
 
-1. 到 [Releases](https://github.com/yeyinghai/openwrt-safedog/releases) 下载 `luci-app-sshguard_*_all.ipk`
+1. 到 [Releases](https://github.com/yeyinghai/openwrt-safedog/releases) 下载 `luci-app-sshguard_*_all.ipk`（ImmortalWrt / OpenWrt 25.12 及以后的新固件下载 `luci-app-sshguard-*.apk`，用 `apk add --allow-untrusted 文件名` 安装）
 2. 上传到路由器并安装：
 
 ```sh

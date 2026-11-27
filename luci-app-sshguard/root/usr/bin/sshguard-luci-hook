@@ -2,6 +2,8 @@
 # 在 LuCI 登录流程中写 syslog：luci: accepted/failed login for USER from IP
 F=/usr/lib/lua/luci/dispatcher.lua
 M='-- sshguard-hook'
+# 新版 LuCI（ucode）自己会写登录日志，不需要也没有 dispatcher.lua
+[ -f "$F" ] || { echo "新版 LuCI 自带登录日志，无需补丁"; exit 0; }
 case "$1" in
 apply)
   grep -q -- "$M" "$F" && exit 0

@@ -6,7 +6,12 @@ PKG=luci-app-sshguard
 D=/tmp/sshguard-update; P=/etc/sshguard; mkdir -p "$D" "$P"
 INFO=$D/update.info; NOTES=$D/update.notes; LOG=$D/update.log; STATE=$D/update.state
 
-cur() { opkg status $PKG 2>/dev/null | sed -n 's/^Version: \(.*\)-[0-9]*$/\1/p'; }
+# 新固件用 apk（ImmortalWrt/OpenWrt 25.12+），老固件用 opkg
+if command -v apk >/dev/null 2>&1 && [ -d /lib/apk/db ]; then PM=apk; else PM=opkg; fi
+cur() {
+  if [ $PM = apk ]; then apk list -I $PKG 2>/dev/null | sed -n "s/^$PKG-\([0-9.]*\)-r[0-9]* .*/\1/p" | head -n1
+  else opkg status $PKG 2>/dev/null | sed -n 's/^Version: \(.*\)-[0-9]*$/\1/p'; fi
+}
 newer() { awk -v a="$1" -v b="$2" 'BEGIN{n=split(a,x,".");m=split(b,y,".");k=n>m?n:m;for(i=1;i<=k;i++){if(x[i]+0>y[i]+0)exit 0;if(x[i]+0<y[i]+0)exit 1}exit 1}'; }
 get() { sed -n "s/^$1=//p" "$INFO" 2>/dev/null; }
 
@@ -32,7 +37,8 @@ check() {
     pa=$(echo "$j" | jsonfilter -e '@.published_at')
     date=$(date -d @"$(date -u -D '%Y-%m-%dT%H:%M:%SZ' -d "$pa" +%s 2>/dev/null)" +%F 2>/dev/null) || date=$(echo "$pa" | cut -c1-10)
     [ -n "$date" ] || date=$(echo "$pa" | cut -c1-10)
-    ipk=$(echo "$j" | jsonfilter -e '@.assets[0].name')
+    if [ $PM = apk ]; then ipk=$(echo "$j" | jsonfilter -e '@.assets[*].name' | grep '\.apk$' | head -n1)
+    else ipk=$(echo "$j" | jsonfilter -e '@.assets[*].name' | grep '\.ipk$' | head -n1); fi
     echo "$j" | jsonfilter -e '@.body' | tr -d '\r' > "$NOTES.t"
   else
     for u in "https://cdn.jsdelivr.net/gh/$REPO@main/version.json" "https://fastly.jsdelivr.net/gh/$REPO@main/version.json" \
@@ -40,7 +46,7 @@ check() {
       j=$(curl -sL -m 10 "$u"); v=$(echo "$j" | jsonfilter -e '@.version' 2>/dev/null)
       [ -n "$v" ] || continue
       ver=$v; src=$(echo "$u" | sed 's#^https://\([^/]*\)/.*#\1#')
-      date=$(echo "$j" | jsonfilter -e '@.date'); ipk=$(echo "$j" | jsonfilter -e '@.ipk')
+      date=$(echo "$j" | jsonfilter -e '@.date'); ipk=$(echo "$j" | jsonfilter -e "@.$PM")
       echo "$j" | jsonfilter -e '@.notes' | tr -d '\r' > "$NOTES.t"
       break
     done
@@ -49,7 +55,7 @@ check() {
     echo "fail $(date '+%F %T')" > "$STATE.check"
     echo "❌ 检查失败：GitHub 和所有镜像都连不上"; return 1
   fi
-  [ -n "$ipk" ] || ipk="${PKG}_${ver}-1_all.ipk"
+  if [ -z "$ipk" ]; then [ $PM = apk ] && ipk="${PKG}-${ver}-r1.apk" || ipk="${PKG}_${ver}-1_all.ipk"; fi
   mv "$NOTES.t" "$NOTES"
   printf 'latest=%s\ndate=%s\nipk=%s\nsrc=%s\nchecked=%s\n' "$ver" "$date" "$ipk" "$src" "$(date '+%F %T')" > "$INFO"
   echo "ok $(date '+%F %T')" > "$STATE.check"
@@ -75,18 +81,18 @@ run() {
   echo "[$(date '+%T')] 检查最新版本…"
   check; r=$?
   [ $r = 0 ] || { [ $r = 2 ] && echo "done 已是最新" > "$STATE" || echo "fail 检查失败" > "$STATE"; return; }
-  ver=$(get latest); ipk=$(get ipk); f=$D/new.ipk; ok=""
+  ver=$(get latest); ipk=$(get ipk); f=$D/new.$PM; ok=""
   for m in $(mirrors); do
     url="$(pre $m)https://github.com/$REPO/releases/download/v$ver/$ipk"
     [ "$m" = - ] && how="直连 GitHub" || how="经 $m"
     echo "[$(date '+%T')] 下载 v$ver（$how）"
     rm -f "$f"
-    if curl -sL -m 120 -o "$f" "$url" && tar -tzf "$f" 2>/dev/null | grep -q control.tar.gz; then ok=1; break; fi
+    if curl -sfL -m 120 -o "$f" "$url" && { [ $PM = apk ] && [ "$(head -c 3 "$f")" = ADB ] || tar -tzf "$f" 2>/dev/null | grep -q control.tar.gz; }; then ok=1; break; fi
     echo "  失败，换下一条线路"
   done
-  [ -n "$ok" ] || { echo "❌ 所有线路下载失败，可到 GitHub Release 手动下载 ipk 上传安装"; echo "fail 下载失败" > "$STATE"; return; }
+  [ -n "$ok" ] || { echo "❌ 所有线路下载失败，可到 GitHub Release 手动下载安装包上传安装"; echo "fail 下载失败" > "$STATE"; return; }
   echo "[$(date '+%T')] 下载完成 $(wc -c < "$f") 字节，开始安装…"
-  opkg install "$f" 2>&1
+  if [ $PM = apk ]; then apk add --allow-untrusted "$f" 2>&1; else opkg install "$f" 2>&1; fi
   rm -f "$f"; rm -rf /tmp/luci-*
   if [ "$(cur)" = "$ver" ]; then
     echo "[$(date '+%T')] ✅ 已更新到 v$ver"; echo "done 已更新到 v$ver" > "$STATE"; echo "$ver" > "$P/notified"

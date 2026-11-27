@@ -15,13 +15,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build ipk
         run: ./build.sh && ./release.sh
+      - name: Build apk (ImmortalWrt / OpenWrt 25.12+)
+        run: |
+          sudo apt-get install -y zstd >/dev/null
+          curl -fsSL -o /tmp/ib.tar.zst https://downloads.immortalwrt.org/releases/25.12.2/targets/ipq40xx/generic/immortalwrt-imagebuilder-25.12.2-ipq40xx-generic.Linux-x86_64.tar.zst
+          mkdir -p /tmp/ib && tar --use-compress-program=unzstd -xf /tmp/ib.tar.zst -C /tmp/ib --wildcards '*/staging_dir/host/*'
+          APK=$(ls -d /tmp/ib/*/staging_dir/host/bin/apk) ./build-apk.sh
       - uses: actions/upload-artifact@v4
         with:
           name: luci-app-sshguard
-          path: dist/*.ipk
+          path: |
+            dist/*.ipk
+            dist/*.apk
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.ipk
+          files: |
+            dist/*.ipk
+            dist/*.apk
           body_path: dist/notes.md

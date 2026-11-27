@@ -107,13 +107,55 @@ event() { # 类型 ip user
   [ "$(wc -l < "$EV")" -gt 3000 ] && { tail -n 2000 "$EV" > "$EV.t" && mv "$EV.t" "$EV"; }
 }
 
-# ---------- 封禁 ----------
+# ---------- 封禁（老固件 ipset+iptables，新固件 fw4/nftables 自动切换）----------
+if command -v nft >/dev/null 2>&1 && ! command -v ipset >/dev/null 2>&1; then FWM=nft; else FWM=ipt; fi
+NT="inet sshguard"
 fw_ensure() {
+  if [ $FWM = nft ]; then
+    nft list set $NT ban >/dev/null 2>&1 && return
+    nft -f - <<EOF
+table $NT {
+  set ban { type ipv4_addr; flags timeout; }
+  chain pre { type filter hook prerouting priority -300; policy accept; ip saddr @ban drop; }
+}
+EOF
+    return
+  fi
   ipset -! create $SET hash:ip timeout 86400 2>/dev/null
   iptables -t raw -C PREROUTING -m set --match-set $SET src -j DROP 2>/dev/null || \
     iptables -t raw -I PREROUTING -m set --match-set $SET src -j DROP
 }
-ban_save() { ipset save $SET 2>/dev/null | grep '^add ' > "$P/ban.save"; }
+# 当前封禁列表：每行「IP 剩余秒数」，永久封禁为 0
+ban_list() {
+  if [ $FWM = nft ]; then
+    nft list set $NT ban 2>/dev/null | tr '\n' ' ' | sed -n 's/.*elements = {\([^}]*\)}.*/\1/p' | tr ',' '\n' | awk '
+      function sec(d,  t,n,u){t=0; while (match(d,/^[0-9]+(ms|d|h|m|s)/)) {n=substr(d,1,RLENGTH); d=substr(d,RLENGTH+1); u=n; gsub(/[0-9]/,"",u); n+=0;
+        if(u=="d")t+=n*86400; else if(u=="h")t+=n*3600; else if(u=="m")t+=n*60; else if(u=="s")t+=n} return t}
+      NF{ip=$1; e=0; for(i=2;i<=NF;i++) if($i=="expires") e=sec($(i+1)); print ip, e}'
+  else
+    ipset list $SET 2>/dev/null | sed -n '/^Members:/,$p' | sed -n 's/^\([0-9.]*\) timeout \([0-9]*\).*/\1 \2/p; s/^\([0-9.][0-9.]*\)$/\1 0/p'
+  fi
+}
+ban_test() { if [ $FWM = nft ]; then nft get element $NT ban "{ $1 }" >/dev/null 2>&1; else ipset -q test $SET "$1"; fi; }
+ban_add() { # ip 秒数（0 = 永久）
+  if [ $FWM = nft ]; then
+    if [ "$2" = 0 ]; then nft add element $NT ban "{ $1 }"; else nft add element $NT ban "{ $1 timeout ${2}s }"; fi 2>/dev/null
+  else
+    ipset -! add $SET "$1" timeout "$2"
+  fi
+}
+ban_del() { if [ $FWM = nft ]; then nft delete element $NT ban "{ $1 }" 2>/dev/null; else ipset -q del $SET "$1"; fi; }
+ban_flush() { if [ $FWM = nft ]; then nft flush set $NT ban 2>/dev/null; else ipset -q flush $SET; fi; }
+ban_save() { ban_list > "$P/ban.list"; }
+ban_restore() {
+  fw_ensure
+  if [ -f "$P/ban.list" ]; then
+    while read -r ip t; do [ -n "$ip" ] && ban_add "$ip" "${t:-0}"; done < "$P/ban.list"
+  elif [ -f "$P/ban.save" ]; then # 旧版保存格式：add sshguard_ban IP timeout N
+    sed -n 's/^add [^ ]* \([0-9.]*\)\( timeout \([0-9]*\)\)\{0,1\}.*/\1 \3/p' "$P/ban.save" | while read -r ip t; do ban_add "$ip" "${t:-0}"; done
+    ban_save; rm -f "$P/ban.save"
+  fi
+}
 whitelisted() { # 支持完整 IP，或以 . 结尾的前缀（如 1.2.3.）
   is_lan "$1" && return 0
   for w in $(uci -q get sshguard.main.ban_whitelist); do
@@ -128,8 +170,8 @@ do_ban() { # ip -> 0 已封禁
   case "$1" in *:*) return 1 ;; esac
   whitelisted "$1" && return 1
   fw_ensure
-  ipset -q test $SET "$1" && return 0
-  ipset -! add $SET "$1" timeout $((BAN_MIN * 60))
+  ban_test "$1" && return 0
+  ban_add "$1" $((BAN_MIN * 60))
   ban_save; event ban "$1" ""
   # 断开已建立的连接
   command -v conntrack >/dev/null && conntrack -D -s "$1" >/dev/null 2>&1
@@ -145,7 +187,7 @@ report() {
   cnt() { echo "$R" | awk -F'\t' -v t="$1" '$2==t' | grep -c .; }
   sf=$(cnt sshfail); wf=$(cnt webfail); so=$(cnt sshok); wo=$(cnt webok); nb=$(cnt ban)
   nip=$(echo "$R" | awk -F'\t' '$2=="sshfail"||$2=="webfail"{print $3}' | grep . | sort -u | grep -c .)
-  cur=$(ipset list $SET 2>/dev/null | sed -n '/^Members:/,$p' | grep -c '^[0-9]')
+  cur=$(ban_list | grep -c .)
   body="🛡 攻击：SSH 失败 $sf 次，网页失败 $wf 次，来自 $nip 个 IP"
   if [ "$(cfg report_top 1)" = 1 ] && [ "$nip" -gt 0 ]; then
     body="$body
@@ -212,10 +254,12 @@ case "$1" in
   cron)    cron_set "$2"; exit 0 ;;
   geo)     geo "$2"; exit 0 ;;
   fw)      # 防火墙重载 / 开机时恢复规则与封禁列表
-           fw_ensure; [ -f "$P/ban.save" ] && sed 's/^add [^ ]* /add '$SET' /' "$P/ban.save" | ipset -! restore 2>/dev/null; exit 0 ;;
+           ban_restore; exit 0 ;;
+  fwoff)   # 卸载时移除封禁规则
+           if [ $FWM = nft ]; then nft delete table $NT 2>/dev/null; else iptables -t raw -D PREROUTING -m set --match-set $SET src -j DROP 2>/dev/null; ipset -q destroy $SET; fi; exit 0 ;;
   ban)     BAN=1; do_ban "$2" && echo "已封禁 $2" || echo "无法封禁 $2（内网或白名单）"; exit 0 ;;
-  unban)   if [ "$2" = all ]; then ipset -q flush $SET; else ipset -q del $SET "$2"; fi; ban_save; echo "已解封 $2"; exit 0 ;;
-  bans)    ipset list $SET 2>/dev/null | sed -n '/^Members:/,$p' | sed -n 's/^\([0-9.]*\) timeout \([0-9]*\).*/\1 \2/p'; exit 0 ;;
+  unban)   if [ "$2" = all ]; then ban_flush; else ban_del "$2"; fi; ban_save; echo "已解封 $2"; exit 0 ;;
+  bans)    ban_list; exit 0 ;;
 esac
 
 cleanup  # 只保留一个实例
@@ -243,12 +287,12 @@ ip_from() { echo "$1" | sed -n 's/.* from <\{0,1\}\[\{0,1\}\([0-9a-fA-F.:]*[0-9a
 user_from() { echo "$1" | sed -n "s/.* for '\([^']*\)'.*/\1/p"; }
 lan_skip() { is_lan "$1" && [ "$NOTIFY_LAN_LOGIN" != 1 ]; }
 
-/usr/bin/sshguard-luci-hook apply >/dev/null 2>&1
+[ -f /usr/lib/lua/luci/dispatcher.lua ] && /usr/bin/sshguard-luci-hook apply >/dev/null 2>&1
 
 logread -f | while read -r line; do
   case "$line" in
-    *" luci: accepted login for "*)
-      user=$(echo "$line" | sed -n 's/.* login for \([^ ]*\) from .*/\1/p')
+    *" luci: accepted login "*" for "*)
+      user=$(echo "$line" | sed -n 's/.* for \([^ ]*\) from .*/\1/p')
       ip=$(echo "$line" | sed -n 's/.* from \([0-9a-fA-F.:]*\)$/\1/p')
       now=$(date +%s); last=$(cat "$D/w_$ip" 2>/dev/null); [ -n "$last" ] || last=0
       [ $((now - last)) -ge 60 ] || continue
@@ -258,8 +302,8 @@ logread -f | while read -r line; do
       lan_skip "$ip" && continue
       notify web "$WEB_TITLE" "$WEB_BODY" "$ip" "$user" 1 ""
       continue ;;
-    *" luci: failed login for "*)
-      user=$(echo "$line" | sed -n 's/.* login for \([^ ]*\) from .*/\1/p')
+    *" luci: failed login "*" for "*)
+      user=$(echo "$line" | sed -n 's/.* for \([^ ]*\) from .*/\1/p')
       fail "$(echo "$line" | sed -n 's/.* from \([0-9a-fA-F.:]*\)$/\1/p')" "$user（网页）" webfail
       continue ;;
     *dropbear\[*) ;;
